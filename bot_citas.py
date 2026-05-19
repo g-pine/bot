@@ -4,7 +4,6 @@ Requiere: pip install python-telegram-bot[job-queue]
 """
 
 import os
-import threading
 import logging
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -28,10 +27,9 @@ CITAS = {}
 
 NUEVA_HORA  = "15:30"
 
-# Fechas dinámicas basadas en la fecha del sistema
 _hoy        = datetime.now()
-FECHA_CITA  = (_hoy + timedelta(days=2)).strftime("%d/%m/%Y")  # cita original: hoy + 2 días
-NUEVA_FECHA = (_hoy + timedelta(days=5)).strftime("%d/%m/%Y")  # reagendada:    hoy + 5 días
+FECHA_CITA  = (_hoy + timedelta(days=2)).strftime("%d/%m/%Y")
+NUEVA_FECHA = (_hoy + timedelta(days=5)).strftime("%d/%m/%Y")
 
 # ─── Funciones auxiliares ─────────────────────────────────────────────────────
 def obtener_cita(chat_id: int) -> dict | None:
@@ -66,7 +64,6 @@ def teclado_solo_reagendar() -> InlineKeyboardMarkup:
     ])
 
 def teclado_cancelacion() -> InlineKeyboardMarkup:
-    """5 motivos de cancelación para recopilar información del paciente."""
     return InlineKeyboardMarkup([
         [InlineKeyboardButton("🏥 Emergencia médica",              callback_data="motivo_emergencia")],
         [InlineKeyboardButton("💼 Trabajo o estudios",             callback_data="motivo_laboral")],
@@ -202,10 +199,8 @@ async def manejar_boton(update: Update, context: ContextTypes.DEFAULT_TYPE):
     accion  = query.data
     cita    = obtener_cita(chat_id)
 
-    # ── Confirmar ────────────────────────────────────────────────────────────
     if accion == "confirmar":
         context.user_data["estado"] = "confirmada"
-
         await query.edit_message_text(
             text=(
                 "✅ *CITA CONFIRMADA*\n\n"
@@ -218,30 +213,19 @@ async def manejar_boton(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown",
             reply_markup=teclado_solo_reagendar()
         )
-
         context.job_queue.run_once(
-            recordatorio,
-            when=timedelta(seconds=15),
-            chat_id=chat_id,
-            data=cita,
-            name=f"recordatorio1_{chat_id}"
+            recordatorio, when=timedelta(seconds=15),
+            chat_id=chat_id, data=cita, name=f"recordatorio1_{chat_id}"
         )
         context.job_queue.run_once(
-            segundo_recordatorio,
-            when=timedelta(seconds=30),
-            chat_id=chat_id,
-            data=cita,
-            name=f"recordatorio2_{chat_id}"
+            segundo_recordatorio, when=timedelta(seconds=30),
+            chat_id=chat_id, data=cita, name=f"recordatorio2_{chat_id}"
         )
         context.job_queue.run_once(
-            verificar_asistencia,
-            when=timedelta(seconds=45),
-            chat_id=chat_id,
-            data=cita,
-            name=f"verificacion_{chat_id}"
+            verificar_asistencia, when=timedelta(seconds=45),
+            chat_id=chat_id, data=cita, name=f"verificacion_{chat_id}"
         )
 
-    # ── Cancelar: mostrar menú de motivos ────────────────────────────────────
     elif accion == "cancelar":
         await query.edit_message_text(
             text=(
@@ -252,7 +236,6 @@ async def manejar_boton(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=teclado_cancelacion()
         )
 
-    # ── Motivo de cancelación ─────────────────────────────────────────────────
     elif accion.startswith("motivo_"):
         motivo = accion.replace("motivo_", "")
         context.user_data["estado"]             = "cancelada"
@@ -265,7 +248,6 @@ async def manejar_boton(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "mejoria":    "💊 Mejoría / sin síntomas",
             "otro":       "📌 Otro motivo",
         }
-
         await query.edit_message_text(
             text=(
                 "❌ *Cita cancelada correctamente*\n\n"
@@ -278,13 +260,10 @@ async def manejar_boton(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=teclado_solo_reagendar()
         )
 
-    # ── Reagendar ─────────────────────────────────────────────────────────────
     elif accion == "reagendar":
         context.user_data["estado"] = "reagendada"
-
         cita_reagendada = {**cita, "fecha": NUEVA_FECHA, "hora": NUEVA_HORA}
         registrar_cita(chat_id, cita_reagendada)
-
         await query.edit_message_text(
             text=(
                 "🔄 *¡Cita reagendada exitosamente!*\n\n"
@@ -298,7 +277,6 @@ async def manejar_boton(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def recordatorio(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
     cita    = context.job.data
-
     await context.bot.send_message(
         chat_id=chat_id,
         text=(
@@ -312,7 +290,6 @@ async def recordatorio(context: ContextTypes.DEFAULT_TYPE):
 
 async def segundo_recordatorio(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
-
     await context.bot.send_message(
         chat_id=chat_id,
         text=(
@@ -326,7 +303,6 @@ async def segundo_recordatorio(context: ContextTypes.DEFAULT_TYPE):
 
 async def verificar_asistencia(context: ContextTypes.DEFAULT_TYPE):
     chat_id = context.job.chat_id
-
     await context.bot.send_message(
         chat_id=chat_id,
         text=(
@@ -340,8 +316,6 @@ async def verificar_asistencia(context: ContextTypes.DEFAULT_TYPE):
 
 # ─── Main ─────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    threading.Thread(target=run_health_server, daemon=True).start()
-    print("🌐 Health server iniciado...")
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start",  start))
@@ -353,20 +327,3 @@ if __name__ == "__main__":
 
     print("🤖 Bot de citas iniciado...")
     app.run_polling()
-
-
-# ─── Health check server (requerido por Fly.io) ───────────────────────────────
-from http.server import HTTPServer, BaseHTTPRequestHandler
-import threading
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-    def log_message(self, *args):
-        pass  # silencia los logs del servidor HTTP
-
-def run_health_server():
-    port = int(os.environ.get("PORT", 8080))
-    HTTPServer(("0.0.0.0", port), HealthHandler).serve_forever()
